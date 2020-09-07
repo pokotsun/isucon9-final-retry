@@ -359,18 +359,23 @@ func getDistanceFare(origToDestDistance float64) (int, error) {
 	return lastFare, nil
 }
 
-func getStationsFromCache() ([]Station, error) {
-	cached, ok := cacheMap.Load(KEY_STATION_LIST)
-	if ok {
-		return cached.([]Station), nil
-	}
-	stations := []Station{}
+func initStationsToCache() {
+	var stations []Station
 	err := dbx.Select(&stations, "SELECT * FROM station_master ORDER BY id")
 	if err != nil {
-		return stations, err
+		logger.Errorf("Station Init Error: %s", err)
 	}
 	cacheMap.Store(KEY_STATION_LIST, stations)
-	return stations, nil
+}
+
+func getStationsFromCache() ([]Station, error) {
+	var stations []Station
+	cached, ok := cacheMap.Load(KEY_STATION_LIST)
+	if ok {
+		stations = cached.([]Station)
+		return cached.([]Station), nil
+	}
+	return stations, fmt.Errorf("Failed to Get Stations From Cache")
 }
 
 func getTargetFromStationsByID(targetID int, stations []Station) Station {
@@ -1974,6 +1979,8 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	dbx.Exec("TRUNCATE seat_reservations")
 	dbx.Exec("TRUNCATE reservations")
 	dbx.Exec("TRUNCATE users")
+
+	initStationsToCache()
 
 	resp := InitializeResponse{
 		availableDays,
