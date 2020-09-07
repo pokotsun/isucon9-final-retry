@@ -18,15 +18,22 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"go.uber.org/zap"
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/pbkdf2"
-	// "sync"
+	"sync"
 )
 
 var (
 	banner        = `ISUTRAIN API`
 	TrainClassMap = map[string]string{"express": "最速", "semi_express": "中間", "local": "遅いやつ"}
+	logger        *zap.SugaredLogger
+	cacheMap      = sync.Map{}
+)
+
+const (
+	KEY_DISTANCE_FARE_LIST = "DISTANCE_FARE_LIST"
 )
 
 var dbx *sqlx.DB
@@ -300,12 +307,23 @@ func secureRandomStr(b int) string {
 	return fmt.Sprintf("%x", k)
 }
 
+func getDistanceFareListFromCache() ([]DistanceFare, error) {
+	cached, ok := cacheMap.Load(KEY_DISTANCE_FARE_LIST)
+	if ok {
+		return cached.([]DistanceFare), nil
+	}
+	var distanceFareList []DistanceFare
+	err := dbx.Select(&distanceFareList, "SELECT * FROM distance_fare_master ORDER BY distance")
+	if err != nil {
+		return distanceFareList, err
+	}
+	cacheMap.Store(KEY_DISTANCE_FARE_LIST, distanceFareList)
+	return distanceFareList, nil
+}
+
 func distanceFareHandler(w http.ResponseWriter, r *http.Request) {
 
-	distanceFareList := []DistanceFare{}
-
-	query := "SELECT * FROM distance_fare_master"
-	err := dbx.Select(&distanceFareList, query)
+	distanceFareList, err := getDistanceFareListFromCache()
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
@@ -321,10 +339,7 @@ func distanceFareHandler(w http.ResponseWriter, r *http.Request) {
 
 func getDistanceFare(origToDestDistance float64) (int, error) {
 
-	distanceFareList := []DistanceFare{}
-
-	query := "SELECT distance,fare FROM distance_fare_master ORDER BY distance"
-	err := dbx.Select(&distanceFareList, query)
+	distanceFareList, err := getDistanceFareListFromCache()
 	if err != nil {
 		return 0, err
 	}
@@ -2151,6 +2166,14 @@ func main() {
 		log.Fatalf("failed to connect to DB: %s.", err.Error())
 	}
 	defer dbx.Close()
+
+	// logger initialize
+	zapLogger, err := zap.NewDevelopment()
+	if err != nil {
+		panic(err)
+	}
+	logger = zapLogger.Sugar()
+	defer logger.Sync()
 
 	// HTTP
 
