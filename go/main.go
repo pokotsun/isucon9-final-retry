@@ -36,6 +36,7 @@ var (
 const (
 	KEY_DISTANCE_FARE_LIST = "DISTANCE_FARE_LIST"
 	KEY_STATION_LIST       = "STATION_LIST"
+	KEY_FARE_LIST          = "FARE_LIST"
 )
 
 var dbx *sqlx.DB
@@ -399,6 +400,30 @@ func getTargetFromStationsByName(targetName string, stations []Station) Station 
 	return station
 }
 
+func initFareToCache() {
+	fares := []Fare{}
+	err := dbx.Select(&fares, "SELECT * FROM fare_master ORDER BY start_date")
+	if err != nil {
+		logger.Errorf("Init Fare Master Err: %s", err)
+	}
+	cacheMap.Store(KEY_FARE_LIST, fares)
+}
+
+func filterFareList(trainClass, seatClass string) []Fare {
+	var rtnFares []Fare
+	tmpl, ok := cacheMap.Load(KEY_FARE_LIST)
+	if !ok {
+		return rtnFares
+	}
+	masterFares := tmpl.([]Fare)
+	for _, fare := range masterFares {
+		if fare.TrainClass == trainClass && fare.SeatClass == seatClass {
+			rtnFares = append(rtnFares, fare)
+		}
+	}
+	return rtnFares
+}
+
 func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatClass string) (int, error) {
 	//
 	// 料金計算メモ
@@ -419,12 +444,7 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	}
 
 	// 期間・車両・座席クラス倍率
-	fareList := []Fare{}
-	query := "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
-	err = dbx.Select(&fareList, query, trainClass, seatClass)
-	if err != nil {
-		return 0, err
-	}
+	fareList := filterFareList(trainClass, seatClass)
 
 	if len(fareList) == 0 {
 		return 0, fmt.Errorf("fare_master does not exists")
@@ -1979,6 +1999,7 @@ func initializeHandler(w http.ResponseWriter, r *http.Request) {
 	dbx.Exec("TRUNCATE users")
 
 	initStationsToCache()
+	initFareToCache()
 
 	resp := InitializeResponse{
 		availableDays,
