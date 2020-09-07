@@ -86,3 +86,8 @@ CREATE TABLE `users` (
   `salt` varbinary(1024) NOT NULL,
   `super_secure_password` varbinary(256) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- このINDEXを貼るとエラーが出る?
+-- ALTER TABLE train_master ADD INDEX idx_date_class_name(date, train_class, train_name);
+ALTER TABLE train_timetable_master ADD INDEX idx_date_class_name_station(date, train_class, train_name, station);
+ALTER TABLE seat_master ADD INDEX idx_train_class_seat_class_is_smoking_seat(train_class, seat_class, is_smoking_seat);
