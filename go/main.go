@@ -22,6 +22,7 @@ import (
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/pbkdf2"
+	"sort"
 	"sync"
 )
 
@@ -485,20 +486,20 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	adult, _ := strconv.Atoi(r.URL.Query().Get("adult"))
 	child, _ := strconv.Atoi(r.URL.Query().Get("child"))
 
-	stationList, err := getStationsFromCache()
+	stations, err := getStationsFromCache()
 
-	fromStation := getTargetFromStationsByName(fromName, stationList)
-	toStation := getTargetFromStationsByName(toName, stationList)
+	fromStation := getTargetFromStationsByName(fromName, stations)
+	toStation := getTargetFromStationsByName(toName, stations)
 
 	isNobori := false
 	if fromStation.Distance > toStation.Distance {
 		isNobori = true
 	}
 
-	query := "SELECT * FROM station_master ORDER BY distance"
 	if isNobori {
-		// 上りだったら駅リストを逆にする
-		query += " DESC"
+		sort.Slice(stations, func(i, j int) bool { return stations[i].Distance > stations[j].Distance })
+	} else {
+		sort.Slice(stations, func(i, j int) bool { return stations[i].Distance < stations[j].Distance })
 	}
 
 	usableTrainClassList := getUsableTrainClassList(fromStation, toStation)
@@ -520,13 +521,6 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	trainList := []Train{}
 	err = dbx.Select(&trainList, inQuery, inArgs...)
-	if err != nil {
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	stations := []Station{}
-	err = dbx.Select(&stations, query)
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
@@ -566,7 +560,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				} else {
 					// 出発駅より先に終点が見つかったとき
-					fmt.Println("なんかおかしい")
+					logger.Infof("なんかおかしい")
 					break
 				}
 			}
