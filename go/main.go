@@ -34,6 +34,7 @@ var (
 
 const (
 	KEY_DISTANCE_FARE_LIST = "DISTANCE_FARE_LIST"
+	KEY_STATION_LIST       = "STATION_LIST"
 )
 
 var dbx *sqlx.DB
@@ -347,8 +348,6 @@ func getDistanceFare(origToDestDistance float64) (int, error) {
 	lastDistance := 0.0
 	lastFare := 0
 	for _, distanceFare := range distanceFareList {
-
-		fmt.Println(origToDestDistance, distanceFare.Distance, distanceFare.Fare)
 		if float64(lastDistance) < origToDestDistance && origToDestDistance < float64(distanceFare.Distance) {
 			break
 		}
@@ -359,45 +358,53 @@ func getDistanceFare(origToDestDistance float64) (int, error) {
 	return lastFare, nil
 }
 
+func getStationsFromCache() ([]Station, error) {
+	cached, ok := cacheMap.Load(KEY_STATION_LIST)
+	if ok {
+		return cached.([]Station), nil
+	}
+	stations := []Station{}
+	err := dbx.Select(&stations, "SELECT * FROM station_master")
+	if err != nil {
+		return stations, err
+	}
+	cacheMap.Store(KEY_STATION_LIST, stations)
+	return stations, nil
+}
+
+func getTargetFromStations(targetID int, stations []Station) Station {
+	var station Station
+	for _, s := range stations {
+		if s.ID == targetID {
+			station = s
+			break
+		}
+	}
+	return station
+}
+
 func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatClass string) (int, error) {
 	//
 	// 料金計算メモ
 	// 距離運賃(円) * 期間倍率(繁忙期なら2倍等) * 車両クラス倍率(急行・各停等) * 座席クラス倍率(プレミアム・指定席・自由席)
 	//
-	var err error
-	var fromStation, toStation Station
 
-	query := "SELECT * FROM station_master WHERE id=?"
-
-	// From
-	err = dbx.Get(&fromStation, query, depStation)
-	if err == sql.ErrNoRows {
-		return 0, err
-	}
+	stations, err := getStationsFromCache()
 	if err != nil {
 		return 0, err
 	}
 
-	// To
-	err = dbx.Get(&toStation, query, destStation)
-	if err == sql.ErrNoRows {
-		return 0, err
-	}
-	if err != nil {
-		log.Print(err)
-		return 0, err
-	}
+	fromStation := getTargetFromStations(depStation, stations)
+	toStation := getTargetFromStations(destStation, stations)
 
-	fmt.Println("distance", math.Abs(toStation.Distance-fromStation.Distance))
 	distFare, err := getDistanceFare(math.Abs(toStation.Distance - fromStation.Distance))
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println("distFare", distFare)
 
 	// 期間・車両・座席クラス倍率
 	fareList := []Fare{}
-	query = "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
+	query := "SELECT * FROM fare_master WHERE train_class=? AND seat_class=? ORDER BY start_date"
 	err = dbx.Select(&fareList, query, trainClass, seatClass)
 	if err != nil {
 		return 0, err
@@ -411,12 +418,9 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 	for _, fare := range fareList {
 		if !date.Before(fare.StartDate) {
-			fmt.Println(fare.StartDate, fare.FareMultiplier)
 			selectedFare = fare
 		}
 	}
-
-	fmt.Println("%%%%%%%%%%%%%%%%%%%")
 
 	return int(float64(distFare) * selectedFare.FareMultiplier), nil
 }
