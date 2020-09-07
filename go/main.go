@@ -364,7 +364,7 @@ func getStationsFromCache() ([]Station, error) {
 		return cached.([]Station), nil
 	}
 	stations := []Station{}
-	err := dbx.Select(&stations, "SELECT * FROM station_master")
+	err := dbx.Select(&stations, "SELECT * FROM station_master ORDER BY id")
 	if err != nil {
 		return stations, err
 	}
@@ -372,10 +372,20 @@ func getStationsFromCache() ([]Station, error) {
 	return stations, nil
 }
 
-func getTargetFromStations(targetID int, stations []Station) Station {
+func getTargetFromStationsByID(targetID int, stations []Station) Station {
 	var station Station
 	for _, s := range stations {
 		if s.ID == targetID {
+			station = s
+			break
+		}
+	}
+	return station
+}
+func getTargetFromStationsByName(targetName string, stations []Station) Station {
+	var station Station
+	for _, s := range stations {
+		if s.Name == targetName {
 			station = s
 			break
 		}
@@ -394,8 +404,8 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 		return 0, err
 	}
 
-	fromStation := getTargetFromStations(depStation, stations)
-	toStation := getTargetFromStations(destStation, stations)
+	fromStation := getTargetFromStationsByID(depStation, stations)
+	toStation := getTargetFromStationsByID(destStation, stations)
 
 	distFare, err := getDistanceFare(math.Abs(toStation.Distance - fromStation.Distance))
 	if err != nil {
@@ -433,10 +443,7 @@ func getStationsHandler(w http.ResponseWriter, r *http.Request) {
 		return []Station{}
 	*/
 
-	stations := []Station{}
-
-	query := "SELECT * FROM station_master ORDER BY id"
-	err := dbx.Select(&stations, query)
+	stations, err := getStationsFromCache()
 	if err != nil {
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
@@ -478,40 +485,17 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	adult, _ := strconv.Atoi(r.URL.Query().Get("adult"))
 	child, _ := strconv.Atoi(r.URL.Query().Get("child"))
 
-	var fromStation, toStation Station
-	query := "SELECT * FROM station_master WHERE name=?"
+	stationList, err := getStationsFromCache()
 
-	// From
-	err = dbx.Get(&fromStation, query, fromName)
-	if err == sql.ErrNoRows {
-		log.Print("fromStation: no rows")
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		errorResponse(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	// To
-	err = dbx.Get(&toStation, query, toName)
-	if err == sql.ErrNoRows {
-		log.Print("toStation: no rows")
-		errorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		log.Print(err)
-		errorResponse(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	fromStation := getTargetFromStationsByName(fromName, stationList)
+	toStation := getTargetFromStationsByName(toName, stationList)
 
 	isNobori := false
 	if fromStation.Distance > toStation.Distance {
 		isNobori = true
 	}
 
-	query = "SELECT * FROM station_master ORDER BY distance"
+	query := "SELECT * FROM station_master ORDER BY distance"
 	if isNobori {
 		// 上りだったら駅リストを逆にする
 		query += " DESC"
