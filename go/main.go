@@ -767,14 +767,14 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !usable {
-		err = fmt.Errorf("invalid train_class")
-		log.Print(err)
+		logger.Errorf("invalid train_class")
 		errorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	seatList := []Seat{}
 
+	// seatRow, seatColumn順に今の列車のseat情報を全部取る
 	query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? ORDER BY seat_row, seat_column"
 	err = dbx.Select(&seatList, query, trainClass, carNumber)
 	if err != nil {
@@ -788,17 +788,18 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 
 		s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
 
-		seatReservationList := []SeatReservation{}
+		// seatReservationList := []SeatReservation{}
+		reservations := []Reservation{}
 
 		query := `
-SELECT s.*
+SELECT r.*
 FROM seat_reservations s, reservations r
 WHERE
 	r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
 `
 
 		err = dbx.Select(
-			&seatReservationList, query,
+			&reservations, query,
 			date.Format("2006/01/02"),
 			seat.TrainClass,
 			trainName,
@@ -811,16 +812,7 @@ WHERE
 			return
 		}
 
-		fmt.Println(seatReservationList)
-
-		for _, seatReservation := range seatReservationList {
-			reservation := Reservation{}
-			query = "SELECT * FROM reservations WHERE reservation_id=?"
-			err = dbx.Get(&reservation, query, seatReservation.ReservationId)
-			if err != nil {
-				panic(err)
-			}
-
+		for _, reservation := range reservations {
 			stations, err := getStationsFromCache()
 			if err != nil {
 				panic(err)
@@ -852,12 +844,10 @@ WHERE
 			}
 		}
 
-		fmt.Println(s.IsOccupied)
 		seatInformationList = append(seatInformationList, s)
 	}
 
 	// 各号車の情報
-
 	simpleCarInformationList := []SimpleCarInformation{}
 	seat := Seat{}
 	query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? ORDER BY seat_row, seat_column LIMIT 1"
