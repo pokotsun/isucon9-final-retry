@@ -97,6 +97,10 @@ type Reservation struct {
 	Adult         int        `json:"adult" db:"adult"`
 	Child         int        `json:"child" db:"child"`
 	Amount        int        `json:"amount" db:"amount"`
+
+	// only use for /seats
+	SeatColumn string `json:"seat_column" db:"seat_column"`
+	SeatRow    int    `json:"seat_row" db:"seat_row"`
 }
 
 type SeatReservation struct {
@@ -782,65 +786,56 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var seatInformationList []SeatInformation
+	subQuery := `SELECT r.* FROM reservations r, seat_reservations s
+				 WHERE r.date = ? AND r.train_class = ? AND r.train_name=? AND s.car_number=?`
+	var reservations []Reservation
+	err = dbx.Select(&reservations, subQuery, date.Format("2006/01/02"), trainClass, trainName, carNumber)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	reservationsMap := map[string][]Reservation{}
+	for _, r := range reservations {
+		key := fmt.Sprintf("%d-%s", r.SeatRow, r.SeatColumn)
+		if _, ok := reservationsMap[key]; !ok {
+			reservationsMap[key] = []Reservation{}
+		}
+		reservationsMap[key] = append(reservationsMap[key], r)
+	}
 
+	var seatInformationList []SeatInformation
 	for _, seat := range seatList {
 
 		s := SeatInformation{seat.SeatRow, seat.SeatColumn, seat.SeatClass, seat.IsSmokingSeat, false}
 
-		// seatReservationList := []SeatReservation{}
-		reservations := []Reservation{}
+		key := fmt.Sprintf("%d-%s", seat.SeatRow, seat.SeatColumn)
+		if reservations, ok := reservationsMap[key]; ok {
+			for _, reservation := range reservations {
+				departureStation := getTargetFromStationsByName(reservation.Departure, stations)
+				arrivalStation := getTargetFromStationsByName(reservation.Arrival, stations)
 
-		query := `
-SELECT r.*
-FROM seat_reservations s, reservations r
-WHERE
-	r.date=? AND r.train_class=? AND r.train_name=? AND car_number=? AND seat_row=? AND seat_column=?
-`
+				if train.IsNobori {
+					// 上り
+					if toStation.ID < arrivalStation.ID && fromStation.ID <= arrivalStation.ID {
+						// pass
+					} else if toStation.ID >= departureStation.ID && fromStation.ID > departureStation.ID {
+						// pass
+					} else {
+						s.IsOccupied = true
+					}
 
-		err = dbx.Select(
-			&reservations, query,
-			date.Format("2006/01/02"),
-			seat.TrainClass,
-			trainName,
-			seat.CarNumber,
-			seat.SeatRow,
-			seat.SeatColumn,
-		)
-		if err != nil {
-			errorResponse(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		for _, reservation := range reservations {
-			stations, err := getStationsFromCache()
-			if err != nil {
-				panic(err)
-			}
-			departureStation := getTargetFromStationsByName(reservation.Departure, stations)
-			arrivalStation := getTargetFromStationsByName(reservation.Arrival, stations)
-
-			if train.IsNobori {
-				// 上り
-				if toStation.ID < arrivalStation.ID && fromStation.ID <= arrivalStation.ID {
-					// pass
-				} else if toStation.ID >= departureStation.ID && fromStation.ID > departureStation.ID {
-					// pass
 				} else {
-					s.IsOccupied = true
+					// 下り
+
+					if fromStation.ID < departureStation.ID && toStation.ID <= departureStation.ID {
+						// pass
+					} else if fromStation.ID >= arrivalStation.ID && toStation.ID > arrivalStation.ID {
+						// pass
+					} else {
+						s.IsOccupied = true
+					}
+
 				}
-
-			} else {
-				// 下り
-
-				if fromStation.ID < departureStation.ID && toStation.ID <= departureStation.ID {
-					// pass
-				} else if fromStation.ID >= arrivalStation.ID && toStation.ID > arrivalStation.ID {
-					// pass
-				} else {
-					s.IsOccupied = true
-				}
-
 			}
 		}
 
