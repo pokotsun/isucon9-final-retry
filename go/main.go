@@ -253,10 +253,6 @@ var (
 	store sessions.Store = sessions.NewCookieStore([]byte(secureRandomStr(20)))
 )
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, World")
-}
-
 func messageResponse(w http.ResponseWriter, message string) {
 	e := map[string]interface{}{
 		"is_error": false,
@@ -513,8 +509,8 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	stations, err := getStationsFromCache()
 
-	fromStation := getTargetFromStationsByName(fromName, stations)
-	toStation := getTargetFromStationsByName(toName, stations)
+	fromStation := getTargetFromStationsByName(fromName, stations) // 出発駅
+	toStation := getTargetFromStationsByName(toName, stations)     // 到着駅
 
 	isNobori := false
 	if fromStation.Distance > toStation.Distance {
@@ -549,16 +545,14 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("From", fromStation)
-	fmt.Println("To", toStation)
-
 	trainSearchResponseList := []TrainSearchResponse{}
 
+	// 各候補の電車について回す
 	for _, train := range trainList {
 		isSeekedToFirstStation := false
 		isContainsOriginStation := false
 		isContainsDestStation := false
-		i := 0
+		i := 0 // 到着駅のindex
 
 		for _, station := range stations {
 
@@ -583,7 +577,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				} else {
 					// 出発駅より先に終点が見つかったとき
-					logger.Infof("なんかおかしい")
+					logger.Infof("出発駅より先に到着駅が見つかった")
 					break
 				}
 			}
@@ -623,53 +617,42 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			premium_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", false)
-			if err != nil {
-				errorResponse(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			premium_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "premium", true)
+			getAvailableSeatsNum, err := train.getAvailableSeats(fromStation, toStation)
 			if err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
 			}
 
-			reserved_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", false)
-			if err != nil {
-				errorResponse(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			reserved_smoke_avail_seats, err := train.getAvailableSeats(fromStation, toStation, "reserved", true)
-			if err != nil {
-				errorResponse(w, http.StatusBadRequest, err.Error())
-				return
-			}
+			premium_avail_seats := getAvailableSeatsNum[0]
+			premium_smoke_avail_seats := getAvailableSeatsNum[1]
+			reserved_avail_seats := getAvailableSeatsNum[2]
+			reserved_smoke_avail_seats := getAvailableSeatsNum[3]
 
 			premium_avail := "○"
-			if len(premium_avail_seats) == 0 {
+			if premium_avail_seats == 0 {
 				premium_avail = "×"
-			} else if len(premium_avail_seats) < 10 {
+			} else if premium_avail_seats < 10 {
 				premium_avail = "△"
 			}
 
 			premium_smoke_avail := "○"
-			if len(premium_smoke_avail_seats) == 0 {
+			if premium_smoke_avail_seats == 0 {
 				premium_smoke_avail = "×"
-			} else if len(premium_smoke_avail_seats) < 10 {
+			} else if premium_smoke_avail_seats < 10 {
 				premium_smoke_avail = "△"
 			}
 
 			reserved_avail := "○"
-			if len(reserved_avail_seats) == 0 {
+			if reserved_avail_seats == 0 {
 				reserved_avail = "×"
-			} else if len(reserved_avail_seats) < 10 {
+			} else if reserved_avail_seats < 10 {
 				reserved_avail = "△"
 			}
 
 			reserved_smoke_avail := "○"
-			if len(reserved_smoke_avail_seats) == 0 {
+			if reserved_smoke_avail_seats == 0 {
 				reserved_smoke_avail = "×"
-			} else if len(reserved_smoke_avail_seats) < 10 {
+			} else if reserved_smoke_avail_seats < 10 {
 				reserved_smoke_avail = "△"
 			}
 

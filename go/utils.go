@@ -48,16 +48,24 @@ func getUsableTrainClassList(fromStation Station, toStation Station) []string {
 	return ret
 }
 
-func (train Train) getAvailableSeats(fromStation Station, toStation Station, seatClass string, isSmokingSeat bool) ([]Seat, error) {
+/*
+index
+0: premium not_smoking
+1: premium is_smoking
+2: reserved not_smoking
+3: reserved is_smoking
+*/
+
+func (train Train) getAvailableSeats(fromStation Station, toStation Station) ([]int, error) {
 	// 指定種別の空き座席を返す
 
 	var err error
 
 	// 全ての座席を取得する
-	query := "SELECT * FROM seat_master WHERE train_class=? AND seat_class=? AND is_smoking_seat=?"
+	query := "SELECT * FROM seat_master WHERE train_class=?"
 
 	seatList := []Seat{}
-	err = dbx.Select(&seatList, query, train.TrainClass, seatClass, isSmokingSeat)
+	err = dbx.Select(&seatList, query, train.TrainClass)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +76,7 @@ func (train Train) getAvailableSeats(fromStation Station, toStation Station, sea
 	}
 
 	// すでに取られている予約を取得する
+	// TODO 遅そう
 	query = `
 	SELECT sr.reservation_id, sr.car_number, sr.seat_row, sr.seat_column
 	FROM seat_reservations sr, reservations r, seat_master s, station_master std, station_master sta
@@ -98,9 +107,22 @@ func (train Train) getAvailableSeats(fromStation Station, toStation Station, sea
 		delete(availableSeatMap, key)
 	}
 
-	ret := []Seat{}
+	ret := []int{0, 0, 0, 0}
 	for _, seat := range availableSeatMap {
-		ret = append(ret, seat)
+		if seat.SeatClass == "premium" {
+			if !seat.IsSmokingSeat {
+				ret[0]++
+			} else {
+				ret[1]++
+			}
+		} else if seat.SeatClass == "reserved" {
+			if !seat.IsSmokingSeat {
+				ret[2]++
+			} else {
+				ret[3]++
+			}
+		}
 	}
+
 	return ret, nil
 }
