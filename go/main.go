@@ -246,7 +246,7 @@ type AuthResponse struct {
 
 const (
 	sessionName   = "session_isutrain"
-	availableDays = 10
+	availableDays = 50
 )
 
 var (
@@ -531,7 +531,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 
 	trainList := []Train{}
 	if trainClass == "" {
-		query := "SELECT * FROM train_master WHERE date=? AND train_class IN (?) AND is_nobori=?"
+		query := "SELECT * FROM train_master WHERE date=? AND train_class IN (?) AND is_nobori=? ORDER BY departure_at"
 		var inQuery string
 		var inArgs []interface{}
 		inQuery, inArgs, err = sqlx.In(query, date.Format("2006/01/02"), usableTrainClassList, isNobori)
@@ -541,7 +541,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		err = dbx.Select(&trainList, inQuery, inArgs...)
 	} else {
-		query := "SELECT * FROM train_master WHERE date=? AND train_class=? AND is_nobori=?"
+		query := "SELECT * FROM train_master WHERE date=? AND train_class=? AND is_nobori=? ORDER BY departure_at"
 		err = dbx.Select(&trainList, query, date.Format("2006/01/02"), trainClass, isNobori)
 	}
 	if err != nil {

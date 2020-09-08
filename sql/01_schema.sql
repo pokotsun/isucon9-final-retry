@@ -88,6 +88,7 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- このINDEXを貼るとエラーが出る?
--- ALTER TABLE train_master ADD INDEX idx_date_class_name(date, train_class, train_name);
+ALTER TABLE train_master ADD KEY(date, train_class, departure_at);
 ALTER TABLE train_timetable_master ADD INDEX idx_date_class_name_station(date, train_class, train_name, station);
 ALTER TABLE seat_master ADD INDEX idx_train_class_seat_class_is_smoking_seat(train_class, seat_class, is_smoking_seat);
+ALTER TABLE seat_master ADD KEY (train_class, car_number, seat_row, seat_column)
