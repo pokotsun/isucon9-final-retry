@@ -1848,8 +1848,8 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wait := &sync.WaitGroup{}
 	tx := dbx.MustBegin()
+	wait := &sync.WaitGroup{}
 
 	reservation := Reservation{}
 	query := "SELECT * FROM reservations WHERE reservation_id=? AND user_id=?"
@@ -1954,8 +1954,8 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx.Commit()
 	wait.Wait()
+	tx.Commit()
 	messageResponse(w, "cancell complete")
 }
 
