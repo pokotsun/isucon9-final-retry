@@ -568,8 +568,21 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trainSearchResponseList := []TrainSearchResponse{}
+	seatsEachTrainClass := make(map[string][]Seat)
+	trainClassList := [3]string{"最速", "中間", "遅いやつ"}
+	query := "SELECT * FROM seat_master WHERE train_class=?"
+	for _, trainClass := range trainClassList {
+		seatList := []Seat{}
+		err = dbx.Select(&seatList, query, trainClass)
+		if err != nil {
+			errorResponse(w, http.StatusBadRequest, err.Error())
+			logger.Errorf("Train Class Seats Init Failed On Search: %s", err)
+			return
+		}
+		seatsEachTrainClass[trainClass] = seatList
+	}
 
+	trainSearchResponseList := []TrainSearchResponse{}
 	// 各候補の電車について回す
 	for _, train := range trainList {
 		isSeekedToFirstStation := false
@@ -640,7 +653,7 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			getAvailableSeatsNum, err := train.getAvailableSeats(fromStation, toStation)
+			getAvailableSeatsNum, err := train.getAvailableSeats(fromStation, toStation, seatsEachTrainClass[train.TrainClass])
 			if err != nil {
 				errorResponse(w, http.StatusBadRequest, err.Error())
 				return
@@ -1217,7 +1230,6 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		// 座席情報のValidate
 		seatList := Seat{}
 		for _, z := range req.Seats {
-			fmt.Println("XXXX", z)
 			query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? AND seat_column=? AND seat_row=? AND seat_class=?"
 			err = dbx.Get(
 				&seatList, query,
@@ -1333,7 +1345,6 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 				for _, seat := range req.Seats {
 					if v.CarNumber == req.CarNumber && v.SeatRow == seat.Row && v.SeatColumn == seat.Column {
 						tx.Rollback()
-						fmt.Println("Duplicated ", reservation)
 						errorResponse(w, http.StatusBadRequest, "リクエストに既に予約された席が含まれています")
 						return
 					}
@@ -1388,7 +1399,6 @@ func trainReservationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sumFare := (req.Adult * fare) + (req.Child*fare)/2
-	fmt.Println("SUMFARE")
 
 	// userID取得。ログインしてないと怒られる。
 	user, errCode, errMsg := getUser(r)
