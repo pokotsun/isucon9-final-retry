@@ -27,15 +27,15 @@ import (
 )
 
 var (
-	banner        = `ISUTRAIN API`
-	TrainClassMap = map[string]string{"express": "最速", "semi_express": "中間", "local": "遅いやつ"}
-	logger        *zap.SugaredLogger
-	cacheMap      = sync.Map{}
+	banner         = `ISUTRAIN API`
+	TrainClassMap  = map[string]string{"express": "最速", "semi_express": "中間", "local": "遅いやつ"}
+	logger         *zap.SugaredLogger
+	cacheMap       = sync.Map{}
+	cachedStations = []Station{}
 )
 
 const (
 	KEY_DISTANCE_FARE_LIST = "DISTANCE_FARE_LIST"
-	KEY_STATION_LIST       = "STATION_LIST"
 	KEY_FARE_LIST          = "FARE_LIST"
 )
 
@@ -366,15 +366,14 @@ func initStationsToCache() {
 	if err != nil {
 		logger.Errorf("Station Init Error: %s", err)
 	}
-	cacheMap.Store(KEY_STATION_LIST, stations)
+	cachedStations = stations
 }
 
 func getStationsFromCache() ([]Station, error) {
-	var stations []Station
-	cached, ok := cacheMap.Load(KEY_STATION_LIST)
-	if ok {
-		stations = cached.([]Station)
-		return cached.([]Station), nil
+	stations := make([]Station, len(cachedStations))
+	if len(cachedStations) > 0 {
+		copy(stations, cachedStations)
+		return stations, nil
 	}
 	return stations, fmt.Errorf("Failed to Get Stations From Cache")
 }
@@ -436,7 +435,13 @@ func fareCalc(date time.Time, depStation int, destStation int, trainClass, seatC
 	}
 
 	fromStation := getTargetFromStationsByID(depStation, stations)
+	if fromStation.ID == 0 {
+		logger.Errorf("From Station is InValid ID: %s", depStation)
+	}
 	toStation := getTargetFromStationsByID(destStation, stations)
+	if toStation.ID == 0 {
+		logger.Errorf("To Station is InValid ID: %s", destStation)
+	}
 
 	distFare, err := getDistanceFare(math.Abs(toStation.Distance - fromStation.Distance))
 	if err != nil {
@@ -514,7 +519,19 @@ func trainSearchHandler(w http.ResponseWriter, r *http.Request) {
 	stations, err := getStationsFromCache()
 
 	fromStation := getTargetFromStationsByName(fromName, stations) // 出発駅
-	toStation := getTargetFromStationsByName(toName, stations)     // 到着駅
+	if fromStation.ID == 0 {
+		msg := fmt.Sprintf("Station %s is Not Found", fromName)
+		logger.Error(msg)
+		errorResponse(w, http.StatusNotFound, msg)
+		return
+	}
+	toStation := getTargetFromStationsByName(toName, stations) // 到着駅
+	if toStation.ID == 0 {
+		msg := fmt.Sprintf("Station %s is Not Found", toName)
+		logger.Error(msg)
+		errorResponse(w, http.StatusNotFound, msg)
+		return
+	}
 
 	isNobori := false
 	if fromStation.Distance > toStation.Distance {
@@ -761,7 +778,19 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fromStation := getTargetFromStationsByName(fromName, stations)
+	if fromStation.ID == 0 {
+		msg := fmt.Sprintf("Station %s is Not Found", fromName)
+		logger.Error(msg)
+		errorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
 	toStation := getTargetFromStationsByName(toName, stations)
+	if toStation.ID == 0 {
+		msg := fmt.Sprintf("Station %s is Not Found", toName)
+		logger.Error(msg)
+		errorResponse(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	usableTrainClassList := getUsableTrainClassList(fromStation, toStation)
 	usable := false
