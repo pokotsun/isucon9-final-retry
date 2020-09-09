@@ -252,7 +252,7 @@ type AuthResponse struct {
 
 const (
 	sessionName   = "session_isutrain"
-	availableDays = 50
+	availableDays = 70
 )
 
 var (
@@ -1916,6 +1916,8 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		wait.Add(1)
 		waitCounter++
 		go func() {
+			defer wait.Done()
+
 			payInfo := CancelPaymentInformationRequest{reservation.PaymentId}
 			j, err := json.Marshal(payInfo)
 			if err != nil {
@@ -1938,7 +1940,8 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			resp, err := client.Do(req)
 			if err != nil {
-				errorResponse(w, resp.StatusCode, "HTTP DELETEに失敗しました")
+				// errorResponse(w, resp.StatusCode, "HTTP DELETEに失敗しました")
+				logger.Error("HTTP DELETEに失敗しました")
 				log.Println(err.Error())
 				return
 			}
@@ -1967,7 +1970,31 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			fmt.Println(output)
-			wait.Done()
+
+			query = "DELETE FROM reservations WHERE reservation_id=? AND user_id=?"
+			_, err = tx.Exec(query, itemID, user.ID)
+			if err != nil {
+				tx.Rollback()
+				errorResponse(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			query = "DELETE FROM seat_reservations WHERE reservation_id=?"
+			_, err = tx.Exec(query, itemID)
+			if err == sql.ErrNoRows {
+				tx.Rollback()
+				errorResponse(w, http.StatusInternalServerError, "seat naiyo")
+				return
+			}
+			if err != nil {
+				tx.Rollback()
+				errorResponse(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			tx.Commit()
+
+			messageResponse(w, "api requested cancel complete")
+			return
 		}()
 	default:
 		// pass(requesting状態のものはpayment_id無いので叩かない)
@@ -1986,7 +2013,6 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 	if err == sql.ErrNoRows {
 		tx.Rollback()
 		errorResponse(w, http.StatusInternalServerError, "seat naiyo")
-		// errorResponse(w, http.Status, "authentication failed")
 		return
 	}
 	if err != nil {
@@ -1994,13 +2020,13 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		errorResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	tx.Commit()
 
 	if waitCounter > 50 {
 		wait.Wait()
 		waitCounter = 0
 	}
-	tx.Commit()
-	messageResponse(w, "cancell complete")
+	messageResponse(w, "cancel complete")
 }
 
 func initializeHandler(w http.ResponseWriter, r *http.Request) {
