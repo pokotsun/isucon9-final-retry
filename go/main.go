@@ -32,6 +32,8 @@ var (
 	logger         *zap.SugaredLogger
 	cacheMap       = sync.Map{}
 	cachedStations = []Station{}
+	wait           = &sync.WaitGroup{}
+	waitCounter    = 0
 )
 
 const (
@@ -1878,7 +1880,6 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tx := dbx.MustBegin()
-	wait := &sync.WaitGroup{}
 
 	reservation := Reservation{}
 	query := "SELECT * FROM reservations WHERE reservation_id=? AND user_id=?"
@@ -1903,6 +1904,7 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		// 支払いをキャンセルする
 
 		wait.Add(1)
+		waitCounter++
 		go func() {
 			payInfo := CancelPaymentInformationRequest{reservation.PaymentId}
 			j, err := json.Marshal(payInfo)
@@ -1983,7 +1985,10 @@ func userReservationCancelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wait.Wait()
+	if waitCounter > 50 {
+		wait.Wait()
+		waitCounter = 0
+	}
 	tx.Commit()
 	messageResponse(w, "cancell complete")
 }
