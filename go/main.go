@@ -252,7 +252,7 @@ type AuthResponse struct {
 
 const (
 	sessionName   = "session_isutrain"
-	availableDays = 70
+	availableDays = 50
 )
 
 var (
@@ -888,16 +888,19 @@ func trainSeatsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// 各号車の情報
 	simpleCarInformationList := []SimpleCarInformation{}
-	seat := Seat{}
-	query = "SELECT * FROM seat_master WHERE train_class=? AND car_number=? ORDER BY seat_row, seat_column LIMIT 1"
-	i := 1
-	for {
-		err = dbx.Get(&seat, query, trainClass, i)
-		if err != nil {
-			break
-		}
-		simpleCarInformationList = append(simpleCarInformationList, SimpleCarInformation{i, seat.SeatClass})
-		i = i + 1
+
+	seats := []Seat{}
+	query = `SELECT car_number, train_class, seat_class 
+			 FROM seat_master 
+			 GROUP BY car_number, seat_class, train_class HAVING train_class = ? 
+			 ORDER BY car_number`
+	err = dbx.Select(&seats, query, trainClass)
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	for _, seat := range seats {
+		simpleCarInformationList = append(simpleCarInformationList, SimpleCarInformation{seat.CarNumber, seat.SeatClass})
 	}
 
 	c := CarInformation{date.Format("2006/01/02"), trainClass, trainName, carNumber, seatInformationList, simpleCarInformationList}
